@@ -4,7 +4,8 @@ import os
 import sys
 from zoneinfo import ZoneInfo
 from loguru import logger
-from app.settings import settings
+# --- 修改这里：去掉 app. 前缀 ---
+from settings import settings
 
 def timezone_filter(record):
     record["time"] = record["time"].astimezone(ZoneInfo("Asia/Shanghai"))
@@ -16,16 +17,13 @@ def patch_aihubmix():
         return
     
     try:
-        # 核心逻辑：强制修改 google.genai.Client 的默认行为
         from google import genai
         from google.genai import types
         
         orig_init = genai.Client.__init__
         
         def new_init(self, *args, **kwargs):
-            # 强制注入 AiHubMix 的配置
             kwargs['api_key'] = settings.GEMINI_API_KEY
-            # 自动处理 base_url，确保它指向中转站
             base_url = settings.GEMINI_BASE_URL.rstrip('/')
             if not base_url.endswith('/v1') and not base_url.endswith('/v1beta'):
                 base_url = f"{base_url}/v1"
@@ -39,13 +37,10 @@ def patch_aihubmix():
         logger.error(f"拦截器加载失败: {e}")
 
 def init_log(**sink_channel):
-    # 强制注入
     patch_aihubmix()
-    
     log_level = os.getenv("LOG_LEVEL", "DEBUG").upper()
     logger.remove()
     logger.add(sink=sys.stdout, level=log_level, filter=timezone_filter)
-    # ... 原有 sink 逻辑 ...
     return logger
 
 init_log()
