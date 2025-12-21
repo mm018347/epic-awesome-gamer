@@ -99,7 +99,7 @@ cd epic-awesome-gamer/docker
 version: '3'
 services:
   epic-awesome-gamer:
-    image: ghcr.io/your-username/epic-awesome-gamer:latest
+    image: ghcr.io/10000ge10000/epic-awesome-gamer:latest
     environment:
       - EPIC_EMAIL=your_email@example.com      # <--- 修改这里
       - EPIC_PASSWORD=your_password            # <--- 修改这里
