@@ -6,6 +6,10 @@
 
 **Epic Kiosk** 是一个基于 Docker 的全自动化 Epic Games 免费游戏领取工具。它拥有现代化的 Web 管理界面，支持多账号托管，具备智能调度、自动防封和极简部署的特点。
 
+<p align="center">
+  <img src="assets/image_1.png" alt="Epic Kiosk Dashboard" width="800">
+</p>
+
 ## ✨ 核心功能
 
 * **🚀 自动驾驶**：一键启动，自动完成登录、两步验证（如需）及游戏领取流程。
