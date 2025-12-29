@@ -1,0 +1,4 @@
+FROM ghcr.io/10000ge10000/epic-awesome-gamer:latest
+USER root
+# 安装 requests (下载), beautifulsoup4 (解析), lxml (解析器)
+RUN uv pip install --system --break-system-packages redis requests beautifulsoup4 lxml

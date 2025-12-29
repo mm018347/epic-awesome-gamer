@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Epic 自动驾驶</title>
+    <link rel="icon" href="https://play-lh.googleusercontent.com/L_3QNmRpPejYCEbkkmAo2XumcLq8LfwYHUyEEWc4xWFPaeD57O2Z8QuEvrijRU4l-xGJkaetgKcF2c_r6ySC_Q">
+    <script src="https://cdn.staticfile.org/tailwindcss/3.3.3/tailwind.min.js"></script>
+    <script src="https://cdn.staticfile.org/axios/1.6.0/axios.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;600;800&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: #e2e8f0; min-height: 100vh; display: flex; flex-direction: column; background-image: radial-gradient(at 0% 0%, hsla(253,16%,7%,1) 0, transparent 50%), radial-gradient(at 50% 0%, hsla(225,39%,30%,1) 0, transparent 50%), radial-gradient(at 100% 0%, hsla(339,49%,30%,1) 0, transparent 50%); background-attachment: fixed; }
+        .glass-panel { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37); }
+        .game-card:hover { transform: translateY(-5px) scale(1.02); box-shadow: 0 0 20px rgba(59, 130, 246, 0.5); border-color: rgba(96, 165, 250, 0.5); transition: all 0.3s; z-index: 10; }
+        .terminal { font-family: 'JetBrains Mono', monospace; background: #000; border: 1px solid #333; }
+        .terminal-text { color: #4ade80; text-shadow: 0 0 5px rgba(74, 222, 128, 0.5); }
+        .fade-in { animation: fadeIn 0.5s ease-out forwards; opacity: 0; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .modal-enter { animation: modalIn 0.3s ease-out forwards; }
+        @keyframes modalIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+    </style>
+</head>
+<body class="items-center p-4 md:p-8">
+
+    <div class="w-full max-w-5xl flex flex-col md:flex-row justify-between items-center mb-10 fade-in gap-4" style="animation-delay: 0.1s;">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center shadow-lg shadow-blue-500/30">
+                <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+            </div>
+            <div>
+                <h1 class="text-2xl font-black tracking-tighter text-white">Epic <span class="text-blue-500">自动驾驶</span></h1>
+                <p class="text-[10px] text-gray-400 font-mono tracking-widest uppercase">Automated Asset Management</p>
+            </div>
+        </div>
+        <div class="bg-slate-800/50 p-1 rounded-full border border-white/10 flex backdrop-blur-md">
+            <button onclick="switchTab('deposit')" id="tab-deposit" class="px-6 py-2 rounded-full text-sm font-bold bg-blue-600 text-white shadow-lg transition-all">自动驾驶</button>
+            <button onclick="switchTab('query')" id="tab-query" class="px-6 py-2 rounded-full text-sm font-bold text-gray-400 hover:text-white transition-all">资产清单</button>
+        </div>
+    </div>
+
+    <div class="w-full max-w-5xl relative flex-grow min-h-[500px]">
+        
+        <div id="view-deposit" class="fade-in max-w-lg mx-auto" style="animation-delay: 0.2s;">
+            <div class="glass-panel p-8 rounded-2xl">
+                <h2 class="text-xl font-bold text-white mb-6">自动驾驶终端</h2>
+                <div id="deposit-form" class="space-y-5">
+                    <input type="email" id="d_email" placeholder="Epic Email" class="w-full bg-slate-900/50 border border-slate-700 text-white px-4 py-3 rounded-xl focus:outline-none focus:border-blue-500 transition-all">
+                    <div class="relative">
+                        <input type="password" id="d_password" placeholder="Password" class="w-full bg-slate-900/50 border border-slate-700 text-white px-4 py-3 rounded-xl focus:outline-none focus:border-blue-500 transition-all pr-12">
+                        <button onclick="togglePwd('d_password', this)" class="absolute right-4 top-3 text-slate-500 hover:text-slate-300 text-sm">👁️</button>
+                    </div>
+                    
+                    <button onclick="startVerify()" id="btn-deposit" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2">
+                        <span>启动引擎 (Start Engine)</span>
+                    </button>
+
+                    <button onclick="deleteAccount()" id="btn-delete" class="w-full bg-transparent border border-red-900/50 text-red-500 hover:bg-red-900/20 hover:border-red-500 font-bold py-3 rounded-xl transition-all text-xs">
+                        停止托管 / 删除账号
+                    </button>
+                </div>
+
+                <div id="status-area" class="hidden mt-8">
+                    <div class="flex justify-between items-center mb-2 px-1">
+                        <span class="text-xs font-mono text-slate-500">SYSTEM LOGS</span>
+                        <button onclick="document.getElementById('status-log').innerText='_ Ready.'" class="text-[10px] text-slate-600 hover:text-slate-400">CLEAR</button>
+                    </div>
+                    <div class="terminal rounded-lg p-4 h-64 overflow-y-auto flex flex-col-reverse border border-slate-700/50">
+                        <div id="status-log" class="terminal-text text-xs leading-loose whitespace-pre-wrap">_ Ready.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="view-query" class="hidden fade-in">
+            <div class="flex gap-4 mb-8 glass-panel p-2 rounded-2xl max-w-3xl mx-auto">
+                <input type="email" id="q_email" placeholder="输入邮箱查询资产..." class="flex-1 bg-transparent border-none text-white px-4 py-2 focus:ring-0">
+                <button onclick="doQuery()" id="btn-query" class="bg-slate-800 hover:bg-slate-700 text-white px-6 rounded-xl font-bold">检索</button>
+            </div>
+            <div id="query-result-area" class="hidden">
+                <div class="flex justify-between items-center mb-6 px-4">
+                    <h3 class="text-xl font-bold text-white">资产列表 (Inventory)</h3>
+                    <span id="log-count" class="bg-blue-900 text-blue-300 text-xs px-3 py-1 rounded-full">0</span>
+                </div>
+                <div id="games-grid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4"></div>
+                <div id="empty-msg" class="hidden text-center py-20 text-slate-500">NO_ASSETS_FOUND</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="success-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm hidden">
+        <div class="bg-slate-900 border border-slate-700 p-8 rounded-2xl shadow-2xl max-w-md w-full text-center modal-enter relative">
+            <div class="w-20 h-20 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
+                <svg class="w-10 h-10 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+            </div>
+            <h3 class="text-2xl font-bold text-white mb-2">领取成功!</h3>
+            <p class="text-slate-400 mb-6">Epic 自动驾驶已完成任务。</p>
+            <div class="bg-slate-800 rounded-lg p-4 mb-6">
+                <p class="text-xs text-slate-500 uppercase">New Asset Acquired</p>
+                <p id="modal-game-name" class="text-lg font-bold text-blue-400 mt-1">Unknown Game</p>
+            </div>
+            <div class="flex flex-col gap-3">
+                <a id="modal-game-link" href="https://store.epicgames.com/" target="_blank" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl transition-all">前往领取页面查看</a>
+                <button onclick="closeModal()" class="w-full bg-transparent border border-slate-700 hover:bg-slate-800 text-slate-400 font-bold py-3 rounded-xl transition-all">关闭并继续</button>
+            </div>
+        </div>
+    </div>
+
+    <footer class="w-full max-w-5xl mt-12 pt-8 border-t border-slate-800 fade-in" style="animation-delay: 0.3s;">
+        <div class="flex flex-col md:flex-row justify-between items-center gap-6">
+            <div class="text-center md:text-left">
+                <p class="text-xs text-slate-500 mb-1">Project Source Code</p>
+                <a href="https://github.com/10000ge10000/epic-awesome-gamer" target="_blank" class="flex items-center gap-2 text-sm text-slate-400 hover:text-white transition-colors">
+                    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+                    <span>10000ge10000/epic-awesome-gamer</span>
+                </a>
+            </div>
+            <div class="flex items-center gap-6">
+                <a href="https://space.bilibili.com/59438380" target="_blank" class="text-slate-500 hover:text-blue-400 transition-colors transform hover:scale-110"><svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M17.813 4.653h.854c1.51.054 2.769.578 3.773 1.574 1.004.995 1.524 2.249 1.56 3.758v6.844c-.036 1.51-.556 2.769-1.56 3.773-1.004.996-2.264 1.52-3.773 1.574h-12.714c-1.51-.054-2.769-.578-3.773-1.574-1.004-.995-1.524-2.249-1.56-3.758v-6.844c.036-1.51.556-2.769 1.56-3.773 1.004-.996 2.264-1.52 3.773-1.574h.776l-1.175-1.12a.9.9 0 0 1-.272-.649c0-.271.095-.504.285-.698.19-.194.425-.291.704-.291.278 0 .515.097.71.291l1.896 1.796h5.812l1.896-1.796c.195-.194.432-.291.711-.291.279 0 .514.097.704.291.19.194.285.427.285.698 0 .271-.091.488-.272.649l-1.175 1.12zm-12.876 2.227c-.896.031-1.642.344-2.234.936-.593.593-.902 1.334-.928 2.222v6.864c.026.889.335 1.629.928 2.222.592.593 1.338.905 2.234.936h13.068c.896-.031 1.642-.344 2.234-.936.593-.593.902-1.334.928-2.222v-6.864c-.026-.889-.335-1.629-.928-2.222-.592-.593-1.338-.905-2.234-.936h-13.068zm4.564 7.648c-.628 0-1.156-.226-1.583-.678-.427-.452-.64-1.004-.64-1.656 0-.642.213-1.191.64-1.647.427-.457.955-.685 1.583-.685.637 0 1.168.228 1.593.685.424.456.637 1.005.637 1.647 0 .652-.213 1.204-.637 1.656-.425.452-.956.678-1.593.678zm6.98 0c-.628 0-1.156-.226-1.583-.678-.427-.452-.64-1.004-.64-1.656 0-.642.213-1.191.64-1.647.427-.457.955-.685 1.583-.685.637 0 1.168.228 1.593.685.424.456.637 1.005.637 1.647 0 .652-.213 1.204-.637 1.656-.425.452-.956.678-1.593.678z"/></svg></a>
+                <a href="https://www.youtube.com/channel/UCqgvZnCN9-9pZcL4SWxmnDw" target="_blank" class="text-slate-500 hover:text-red-500 transition-colors transform hover:scale-110"><svg class="w-7 h-7" fill="currentColor" viewBox="0 0 24 24"><path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z"/></svg></a>
+                <a href="https://github.com/10000ge10000" target="_blank" class="text-slate-500 hover:text-white transition-colors transform hover:scale-110"><svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg></a>
+                <a href="https://blog.910501.xyz/" target="_blank" class="text-slate-500 hover:text-emerald-400 transition-colors transform hover:scale-110"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg></a>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // 🚨 拦截器：专门处理 IP 封禁 (403)
+        axios.interceptors.response.use(
+            response => response,
+            error => {
+                if (error.response && error.response.status === 403) {
+                    alert(error.response.data.msg || "Access Denied");
+                }
+                return Promise.reject(error);
+            }
+        );
+
+        function switchTab(tab) {
+            document.getElementById('view-deposit').classList.add('hidden');
+            document.getElementById('view-query').classList.add('hidden');
+            const baseBtn = "px-6 py-2 rounded-full text-sm font-bold text-gray-400 hover:text-white transition-all";
+            const activeBtn = "px-6 py-2 rounded-full text-sm font-bold transition-all bg-blue-600 text-white shadow-lg shadow-blue-600/30";
+            document.getElementById('tab-deposit').className = tab === 'deposit' ? activeBtn : baseBtn;
+            document.getElementById('tab-query').className = tab === 'query' ? activeBtn : baseBtn;
+            document.getElementById('view-' + tab).classList.remove('hidden');
+        }
+
+        function togglePwd(id, btn) {
+            const el = document.getElementById(id);
+            if (el.type === "password") { el.type = "text"; btn.innerText = "🔒"; } else { el.type = "password"; btn.innerText = "👁️"; }
+        }
+
+        let pollTimer;
+        
+        async function startVerify() {
+            const email = document.getElementById('d_email').value;
+            const password = document.getElementById('d_password').value;
+            if(!email || !password) return alert("Credentials missing");
+
+            document.getElementById('deposit-form').classList.add('opacity-50', 'pointer-events-none');
+            document.getElementById('status-area').classList.remove('hidden');
+            
+            try {
+                const res = await axios.post('/api/deposit', { email, password });
+                document.getElementById('status-log').innerText = `> ${res.data.msg}`;
+                pollTimer = setInterval(() => checkStatus(email, password), 1500);
+            } catch(e) { resetUI(); } 
+        }
+
+        async function deleteAccount() {
+            const email = document.getElementById('d_email').value;
+            const password = document.getElementById('d_password').value;
+            if(!email || !password) return alert("请输入完整的账号密码以确认身份");
+            if(!confirm("确定要删除此账号的自动驾驶托管吗？")) return;
+            try {
+                const res = await axios.post('/api/delete_account', { email, password });
+                alert(res.data.msg);
+                if(res.data.status === 'success') {
+                    document.getElementById('d_email').value = '';
+                    document.getElementById('d_password').value = '';
+                }
+            } catch(e) { alert("删除失败"); }
+        }
+
+        async function checkStatus(email, password) {
+            try {
+                const res = await axios.get('/api/status/' + email);
+                const logDiv = document.getElementById('status-log');
+                const newLine = `\n> ${res.data.msg}`;
+                if (!logDiv.innerText.includes(res.data.msg)) {
+                    logDiv.innerText = newLine + logDiv.innerText;
+                }
+
+                if (res.data.result === 'success_new') {
+                    clearInterval(pollTimer);
+                    await axios.post('/api/confirm_success', { email, password });
+                    const gameName = res.data.game_title || "Epic Free Game";
+                    showModal(gameName);
+                    resetUI();
+                } 
+                else if (res.data.result === 'success' || res.data.result === 'success_owned') {
+                    clearInterval(pollTimer);
+                    await axios.post('/api/confirm_success', { email, password });
+                    resetUI();
+                }
+                else if (res.data.result === 'fail') {
+                    clearInterval(pollTimer);
+                    resetUI();
+                }
+            } catch(e) {}
+        }
+
+        function resetUI() {
+            document.getElementById('deposit-form').classList.remove('opacity-50', 'pointer-events-none');
+            document.getElementById('btn-deposit').innerHTML = `<span>启动引擎 (Start Engine)</span><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>`;
+        }
+
+        function showModal(gameName) {
+            document.getElementById('modal-game-name').innerText = gameName;
+            const safeName = encodeURIComponent(gameName);
+            document.getElementById('modal-game-link').href = `https://store.epicgames.com/en-US/browse?q=${safeName}&sortBy=relevancy`;
+            document.getElementById('success-modal').classList.remove('hidden');
+        }
+
+        function closeModal() {
+            document.getElementById('success-modal').classList.add('hidden');
+            switchTab('query');
+            if(document.getElementById('d_email').value) {
+                document.getElementById('q_email').value = document.getElementById('d_email').value;
+                doQuery();
+            }
+        }
+
+        async function doQuery() {
+            const email = document.getElementById('q_email').value;
+            const btn = document.getElementById('btn-query');
+            if(!email) return alert("请输入邮箱");
+            
+            btn.disabled = true; btn.innerText = "...";
+            
+            try {
+                const res = await axios.post('/api/query', { email: email });
+                if(res.data.status === 'success') {
+                    const logs = res.data.data;
+                    const grid = document.getElementById('games-grid');
+                    grid.innerHTML = '';
+                    
+                    document.getElementById('query-result-area').classList.remove('hidden');
+                    document.getElementById('log-count').innerText = logs.length;
+                    
+                    if (logs.length === 0) document.getElementById('empty-msg').classList.remove('hidden');
+                    else {
+                        document.getElementById('empty-msg').classList.add('hidden');
+                        logs.forEach(log => {
+                            // ⚠️ 点击跳转功能
+                            const safeName = encodeURIComponent(log.game);
+                            const storeUrl = `https://store.epicgames.com/en-US/browse?q=${safeName}&sortBy=relevancy`;
+                            
+                            // 用 <a> 包裹整个卡片
+                            grid.innerHTML += `
+                                <a href="${storeUrl}" target="_blank" class="game-card group relative bg-slate-800 rounded-xl overflow-hidden border border-slate-700 cursor-pointer block">
+                                    <div class="aspect-[3/4] relative overflow-hidden">
+                                        <img src="${log.image}" alt="${log.game}" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 opacity-80 group-hover:opacity-100">
+                                        <div class="absolute inset-0 bg-gradient-to-t from-slate-900 via-transparent to-transparent opacity-90"></div>
+                                        <div class="absolute bottom-3 left-3 right-3">
+                                            <div class="text-[10px] font-mono text-green-400 mb-1 flex items-center">
+                                                <span class="w-1.5 h-1.5 bg-green-500 rounded-full mr-1.5 shadow-[0_0_5px_#4ade80]"></span>
+                                                ${log.time.split(' ')[0]}
+                                            </div>
+                                            <h4 class="text-white font-bold text-sm leading-snug line-clamp-2 drop-shadow-md">${log.game}</h4>
+                                        </div>
+                                    </div>
+                                </a>`;
+                        });
+                    }
+                } else alert(res.data.msg);
+            } catch(e) { alert("网络错误"); } 
+            finally { btn.disabled = false; btn.innerText = "检索"; }
+        }
+    </script>
+</body>
+</html>

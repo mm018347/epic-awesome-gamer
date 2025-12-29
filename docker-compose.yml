@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:alpine
+    container_name: epic-redis
+    restart: always
+
+  web:
+    build: .
+    container_name: epic-web
+    ports:
+      - "18000:8000"
+    volumes:
+      # 统一挂载 data 目录，图片存在 ./data/images 下
+      - ./data:/app/data
+    environment:
+      - REDIS_HOST=redis
+      - TZ=Asia/Shanghai
+    depends_on:
+      - redis
+    restart: always
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: epic-worker
+    user: root
+    volumes:
+      # 这里的映射是为了持久化 Cookie
+      - ./data:/app/app/volumes 
+      # ⚠️ 新增：为了让 Worker 把图片保存到宿主机，Web 也能读到
+      - ./data:/app/data
+      - ./worker.py:/app/worker.py
+    environment:
+      - REDIS_HOST=redis
+      - TZ=Asia/Shanghai
+      - PYTHONUNBUFFERED=1
+      # ⚠️ ⚠️ ⚠️ 修改GEMINI_API_KEY值：为你自己申请到的
+      - GEMINI_API_KEY=sk-xxx
+      - GEMINI_BASE_URL=https://aihubmix.com
+      - GEMINI_MODEL=gemini-2.5-pro
+      - ENABLE_APSCHEDULER=false
+    command: ["python3", "/app/worker.py"]
+    depends_on:
+      - redis
+    restart: always
