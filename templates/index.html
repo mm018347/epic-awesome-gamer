@@ -5,13 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Epic 自动驾驶</title>
     <link rel="icon" href="https://play-lh.googleusercontent.com/L_3QNmRpPejYCEbkkmAo2XumcLq8LfwYHUyEEWc4xWFPaeD57O2Z8QuEvrijRU4l-xGJkaetgKcF2c_r6ySC_Q">
-    <script src="https://cdn.staticfile.org/tailwindcss/3.3.3/tailwind.min.js"></script>
-    <script src="https://cdn.staticfile.org/axios/1.6.0/axios.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
     <style>
+        /* ⚠️ 这里的 CSS 完全保留您上传版本的内容，毛玻璃特效就在 .glass-panel 中 */
         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;600;800&display=swap');
         body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: #e2e8f0; min-height: 100vh; display: flex; flex-direction: column; background-image: radial-gradient(at 0% 0%, hsla(253,16%,7%,1) 0, transparent 50%), radial-gradient(at 50% 0%, hsla(225,39%,30%,1) 0, transparent 50%), radial-gradient(at 100% 0%, hsla(339,49%,30%,1) 0, transparent 50%); background-attachment: fixed; }
+        
+        /* 👇 毛玻璃特效代码在这里 */
         .glass-panel { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37); }
-        .game-card:hover { transform: translateY(-5px) scale(1.02); box-shadow: 0 0 20px rgba(59, 130, 246, 0.5); border-color: rgba(96, 165, 250, 0.5); transition: all 0.3s; z-index: 10; }
+        
+        .game-card:hover { transform: translateY(-5px) scale(1.02); box-shadow: 0 0 20px rgba(59, 130, 246, 0.5); border-color: rgba(96, 165, 250, 0.5); transition: all 0.3s; }
         .terminal { font-family: 'JetBrains Mono', monospace; background: #000; border: 1px solid #333; }
         .terminal-text { color: #4ade80; text-shadow: 0 0 5px rgba(74, 222, 128, 0.5); }
         .fade-in { animation: fadeIn 0.5s ease-out forwards; opacity: 0; }
@@ -124,12 +128,12 @@
     </footer>
 
     <script>
-        // 🚨 拦截器：专门处理 IP 封禁 (403)
+        // 🚨 Axios 拦截器：自动拦截 403 封禁状态，弹出提示
         axios.interceptors.response.use(
             response => response,
             error => {
                 if (error.response && error.response.status === 403) {
-                    alert(error.response.data.msg || "Access Denied");
+                    alert(error.response.data.msg || "Access Denied: IP Banned");
                 }
                 return Promise.reject(error);
             }
@@ -164,7 +168,7 @@
                 const res = await axios.post('/api/deposit', { email, password });
                 document.getElementById('status-log').innerText = `> ${res.data.msg}`;
                 pollTimer = setInterval(() => checkStatus(email, password), 1500);
-            } catch(e) { resetUI(); } 
+            } catch(e) { resetUI(); } // 403 错误会由拦截器自动弹出
         }
 
         async function deleteAccount() {
@@ -256,7 +260,7 @@
                             const safeName = encodeURIComponent(log.game);
                             const storeUrl = `https://store.epicgames.com/en-US/browse?q=${safeName}&sortBy=relevancy`;
                             
-                            // 用 <a> 包裹整个卡片
+                            // ⚠️ 将 div 改为 a 标签，并保留所有类名和样式 (确保布局不变，但可点击)
                             grid.innerHTML += `
                                 <a href="${storeUrl}" target="_blank" class="game-card group relative bg-slate-800 rounded-xl overflow-hidden border border-slate-700 cursor-pointer block">
                                     <div class="aspect-[3/4] relative overflow-hidden">
