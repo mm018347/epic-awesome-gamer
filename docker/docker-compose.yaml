@@ -7,7 +7,7 @@ services:
     container_name: epic-awesome-gamer
     
     environment:
-      - TZ=Asia/Shanghai
+      - TZ=Asia/Taipei
 
       # ----------------------------------------
       # 核心账号配置
@@ -19,7 +19,7 @@ services:
       # ----------------------------------------
       # AiHubMix / Gemini 配置
       # ----------------------------------------
-      - GEMINI_BASE_URL=https://aihubmix.com
+      - GEMINI_BASE_URL=https://generativelanguage.googleapis.com
       - GEMINI_MODEL=gemini-2.5-pro
 
       # ----------------------------------------
