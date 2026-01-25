@@ -4,13 +4,19 @@ on:
   workflow_dispatch: # 手动触发
   schedule:
     # 每天 UTC 08:00 (北京时间 16:00) 运行一次
-    - cron: '0 8 * * *'
+    # - cron: '0 8 * * *'
+    # 每周五 07:00（北京时间 UTC+8）= 每周四 23:00（UTC）
+    # 避开周四刚刷新高峰：周五中午（北京时间）跑一次 北京时间 周五 11:30
+    - cron: '30 3 * * 5'
+    # 兜底：周一中午（北京时间）再跑一次
+    - cron: '30 3 * * 1'
 
 jobs:
   epic-gamer:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
