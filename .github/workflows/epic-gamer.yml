@@ -11,10 +11,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     
-    # 🔴 [核心修改] 只有当仓库不是 '10000ge10000/epic-awesome-gamer' 时才运行
-    # 效果：你的仓库触发定时任务会直接显示 Skipped (灰色)，别人 Fork 后会正常运行 (绿色)
-    if: github.repository != '10000ge10000/epic-awesome-gamer'
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
