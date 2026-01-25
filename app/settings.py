@@ -37,7 +37,7 @@ class EpicSettings(AgentConfig):
     
     GEMINI_MODEL: str = Field(
         default=os.getenv("GEMINI_MODEL", "gemini-2.5-pro"),
-        description="模型名称",
+        description="模型名稱（統一設定所有模型）",
     )
 
     EPIC_EMAIL: str = Field(default_factory=lambda: os.getenv("EPIC_EMAIL"))
@@ -64,6 +64,12 @@ class EpicSettings(AgentConfig):
 settings = EpicSettings()
 settings.ignore_request_questions = ["Please drag the crossing to complete the lines"]
 
+# 用 GEMINI_MODEL 統一覆寫 hcaptcha-challenger 的所有模型設定
+settings.CHALLENGE_CLASSIFIER_MODEL = settings.GEMINI_MODEL
+settings.IMAGE_CLASSIFIER_MODEL = settings.GEMINI_MODEL
+settings.SPATIAL_POINT_REASONER_MODEL = settings.GEMINI_MODEL
+settings.SPATIAL_PATH_REASONER_MODEL = settings.GEMINI_MODEL
+
 # ==========================================
 # [方案一修复版] AiHubMix 终极补丁
 # ==========================================
@@ -86,8 +92,7 @@ def _apply_aihubmix_patch():
             kwargs['api_key'] = api_key
             
             base_url = settings.GEMINI_BASE_URL.rstrip('/')
-            if base_url.endswith('/v1'): base_url = base_url[:-3]
-            if not base_url.endswith('/gemini'): base_url = f"{base_url}/gemini"
+            # 不再強制加入 /gemini 字尾，直接使用使用者設定的 URL
             
             kwargs['http_options'] = types.HttpOptions(base_url=base_url)
             logger.info(f"🚀 AiHubMix 补丁已应用 | 模型: {settings.GEMINI_MODEL} | 地址: {base_url}")
