@@ -41,10 +41,10 @@ class EpicSettings(AgentConfig):
     )
     
     # 用 GEMINI_MODEL 統一覆寫 hcaptcha-challenger 的所有模型設定
-    CHALLENGE_CLASSIFIER_MODEL: str = Field(default=GEMINI_MODEL)
-    IMAGE_CLASSIFIER_MODEL: str = Field(default=GEMINI_MODEL)
-    SPATIAL_POINT_REASONER_MODEL: str = Field(default=GEMINI_MODEL)
-    SPATIAL_PATH_REASONER_MODEL: str = Field(default=GEMINI_MODEL)
+    CHALLENGE_CLASSIFIER_MODEL: str = Field(default=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"))
+    IMAGE_CLASSIFIER_MODEL: str = Field(default=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"))
+    SPATIAL_POINT_REASONER_MODEL: str = Field(default=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"))
+    SPATIAL_PATH_REASONER_MODEL: str = Field(default=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"))
 
     EPIC_EMAIL: str = Field(default_factory=lambda: os.getenv("EPIC_EMAIL"))
     EPIC_PASSWORD: SecretStr = Field(default_factory=lambda: os.getenv("EPIC_PASSWORD"))
