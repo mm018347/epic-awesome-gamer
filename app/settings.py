@@ -155,4 +155,4 @@ def _apply_aihubmix_patch():
         logger.error(f"❌ 严重：补丁框架启动失败! 原因: {e}")
 
 # 执行补丁
-_apply_aihubmix_patch()
+#_apply_aihubmix_patch()
