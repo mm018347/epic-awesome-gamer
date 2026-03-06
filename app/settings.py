@@ -24,7 +24,7 @@ HCAPTCHA_DIR = VOLUMES_DIR.joinpath("hcaptcha")
 class EpicSettings(AgentConfig):
     model_config = SettingsConfigDict(env_file=".env", env_ignore_empty=True, extra="ignore")
 
-    # [基础配置] AiHubMix 必须使用 SecretStr 类型
+    # [基础配置]
     GEMINI_API_KEY: SecretStr | None = Field(
         default_factory=lambda: os.getenv("GEMINI_API_KEY"),
         description="AiHubMix 的令牌",
@@ -36,9 +36,15 @@ class EpicSettings(AgentConfig):
     )
     
     GEMINI_MODEL: str = Field(
-        default=os.getenv("GEMINI_MODEL", "gemini-2.5-pro"),
+        default=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
         description="模型名稱（統一設定所有模型）",
     )
+    
+    # 用 GEMINI_MODEL 統一覆寫 hcaptcha-challenger 的所有模型設定
+    CHALLENGE_CLASSIFIER_MODEL: str = Field(default=GEMINI_MODEL)
+    IMAGE_CLASSIFIER_MODEL: str = Field(default=GEMINI_MODEL)
+    SPATIAL_POINT_REASONER_MODEL: str = Field(default=GEMINI_MODEL)
+    SPATIAL_PATH_REASONER_MODEL: str = Field(default=GEMINI_MODEL)
 
     EPIC_EMAIL: str = Field(default_factory=lambda: os.getenv("EPIC_EMAIL"))
     EPIC_PASSWORD: SecretStr = Field(default_factory=lambda: os.getenv("EPIC_PASSWORD"))
@@ -50,6 +56,10 @@ class EpicSettings(AgentConfig):
 
     ENABLE_APSCHEDULER: bool = Field(default=True)
     TASK_TIMEOUT_SECONDS: int = Field(default=900)
+    # 调高超时限制，防止下单重载导致 Timeout
+    EXECUTION_TIMEOUT: float = Field(default=240.0) 
+    RESPONSE_TIMEOUT: float = Field(default=60.0)
+
     REDIS_URL: str = Field(default="redis://redis:6379/0")
     CELERY_WORKER_CONCURRENCY: int = Field(default=1)
     CELERY_TASK_TIME_LIMIT: int = Field(default=1200)
@@ -64,15 +74,7 @@ class EpicSettings(AgentConfig):
 settings = EpicSettings()
 settings.ignore_request_questions = ["Please drag the crossing to complete the lines"]
 
-# 用 GEMINI_MODEL 統一覆寫 hcaptcha-challenger 的所有模型設定
-settings.CHALLENGE_CLASSIFIER_MODEL = settings.GEMINI_MODEL
-settings.IMAGE_CLASSIFIER_MODEL = settings.GEMINI_MODEL
-settings.SPATIAL_POINT_REASONER_MODEL = settings.GEMINI_MODEL
-settings.SPATIAL_PATH_REASONER_MODEL = settings.GEMINI_MODEL
-
-# ==========================================
-# [方案一修复版] AiHubMix 终极补丁
-# ==========================================
+# ========================= 处理中转解析与多图冲突 =========================
 def _apply_aihubmix_patch():
     if not settings.GEMINI_API_KEY:
         return
@@ -95,7 +97,7 @@ def _apply_aihubmix_patch():
             # 不再強制加入 /gemini 字尾，直接使用使用者設定的 URL
             
             kwargs['http_options'] = types.HttpOptions(base_url=base_url)
-            logger.info(f"🚀 AiHubMix 补丁已应用 | 模型: {settings.GEMINI_MODEL} | 地址: {base_url}")
+            logger.info(f"🚀 已强行同步模型变量 | 当前生效 ID: {settings.GEMINI_MODEL} | 地址: {base_url}")
             orig_init(self, *args, **kwargs)
         
         genai.Client.__init__ = new_init
@@ -123,6 +125,11 @@ def _apply_aihubmix_patch():
 
             orig_generate = genai.models.AsyncModels.generate_content
             async def patched_generate(self_models, model, contents, **kwargs):
+                # [修正：针对多图发送时的分辨率冲突]
+                if 'config' in kwargs and kwargs['config'] is not None:
+                    if hasattr(kwargs['config'], 'media_resolution'):
+                        kwargs['config'].media_resolution = None # 剔除写死的 HIGH 分辨率
+
                 normalized = _local_to_list(contents)
                 
                 for content in normalized:
@@ -139,13 +146,13 @@ def _apply_aihubmix_patch():
 
             genai.files.AsyncFiles.upload = patched_upload
             genai.models.AsyncModels.generate_content = patched_generate
-            logger.info("🚀 Base64 文件绕过补丁加载成功 (参数兼容版)")
+            logger.info("🚀 补丁成功挂载：多图写保护 + 模型 ID 动态注入已就绪")
             
         except Exception as ie:
-            logger.warning(f"⚠️ 文件绕过补丁依然失败: {ie}")
+            logger.warning(f"⚠️ 文件层补丁处理异常: {ie}")
 
     except Exception as e:
-        logger.error(f"❌ 严重：AiHubMix 补丁加载完全失败! 原因: {e}")
+        logger.error(f"❌ 严重：补丁框架启动失败! 原因: {e}")
 
 # 执行补丁
 _apply_aihubmix_patch()
