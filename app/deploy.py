@@ -12,6 +12,7 @@ using browser automation and scheduling capabilities.
 
 import asyncio
 import json
+import os
 import signal
 import sys
 from contextlib import suppress
@@ -25,13 +26,13 @@ from loguru import logger
 from playwright.async_api import ViewportSize
 from pytz import timezone
 
-from services.epic_authorization_service import EpicAuthorization
-from services.epic_games_service import EpicAgent
+from services.epic_authorization_service import EpicAuthorization, ErrorType
+from services.epic_games_service import EpicAgent, GameCollectResult
 from settings import LOG_DIR, RECORD_DIR
 from settings import settings
 from utils import init_log
 
-# Initialize logging configuration for runtime, error, and serialization logs
+# Initialize logging configuration
 init_log(
     runtime=LOG_DIR.joinpath("runtime.log"),
     error=LOG_DIR.joinpath("error.log"),
@@ -39,11 +40,11 @@ init_log(
 )
 
 # Default timezone for scheduling operations
-TIMEZONE = timezone("Asia/Shanghai")
+TIMEZONE = timezone("Asia/Taipei")
 
 
 @logger.catch
-async def execute_browser_tasks(headless: bool = True):
+async def execute_browser_tasks(headless: bool = True) -> ErrorType:
     """
     Execute Epic Games free game collection tasks using browser automation.
 
@@ -52,10 +53,13 @@ async def execute_browser_tasks(headless: bool = True):
 
     Args:
         headless: Whether to run browser in headless mode
+
+    Returns:
+        ErrorType: 错误类型，用于指示执行结果
     """
     logger.debug("Starting Epic Games collection task")
 
-    # Configure browser with anti-detection features and video recording
+    # Configure browser with anti-detection features
     async with AsyncCamoufox(
         persistent_context=True,
         user_data_dir=settings.user_data_dir,
@@ -71,16 +75,42 @@ async def execute_browser_tasks(headless: bool = True):
 
         # Handle Epic Games authentication
         logger.debug("Initiating Epic Games authentication")
-        agent = EpicAuthorization(page)
-        await agent.invoke()
-        logger.debug("Authentication completed")
+        auth_agent = EpicAuthorization(page)
+        auth_result = await auth_agent.invoke()
+        logger.debug(f"Authentication result: {auth_result.value if auth_result else 'None'}")
 
-        # Execute a free games collection on new page
+        # ============================================================
+        # 🔥 错误类型处理
+        # 根据不同的错误类型输出特定格式的日志，便于 worker.py 解析
+        # ============================================================
+        if auth_result != ErrorType.SUCCESS:
+            # 输出特定格式的错误日志，便于 worker.py 解析
+            # 格式: ❌ ERROR_TYPE:xxx 其中 xxx 是 ErrorType 的 value
+            logger.error(f"❌ ERROR_TYPE:{auth_result.value}")
+            return auth_result
+
+        logger.debug("Authentication completed successfully")
+
+        # ============================================================
+        # 🔥 修复：使用已认证的页面进行游戏收集
+        # 不要创建新页面，否则会丢失登录状态（Cookie）
+        # ============================================================
         logger.debug("Starting free games collection process")
-        game_page = await browser.new_page()
-        agent = EpicAgent(game_page)
-        await agent.collect_epic_games()
-        logger.debug("Free games collection completed")
+        # 使用已认证的页面，而不是创建新页面
+        agent = EpicAgent(page)
+        game_result = await agent.collect_epic_games()
+
+        # ============================================================
+        # 🔥 游戏收集结果处理
+        # 根据不同的结果类型输出特定格式的日志
+        # ============================================================
+        if game_result == GameCollectResult.ALL_OWNED:
+            logger.success("✅ 所有週免遊戲已在庫中")
+        elif game_result == GameCollectResult.SUCCESS:
+            logger.success("🎉 遊戲領取成功！")
+        else:
+            # 失败情况：输出错误类型供 worker.py 解析
+            logger.error(f"❌ GAME_ERROR:{game_result.value}")
 
         # Cleanup browser resources
         logger.debug("Cleaning up browser resources")
@@ -92,6 +122,7 @@ async def execute_browser_tasks(headless: bool = True):
             await browser.close()
 
         logger.debug("Browser tasks execution finished successfully")
+        return ErrorType.SUCCESS
 
 
 async def deploy():
@@ -111,7 +142,11 @@ async def deploy():
     )
 
     # Execute an immediate collection task
-    await execute_browser_tasks(headless=headless)
+    result = await execute_browser_tasks(headless=headless)
+
+    # 如果任务失败，输出最终错误类型（便于 worker.py 解析）
+    if result != ErrorType.SUCCESS:
+        logger.error(f"❌ FINAL_ERROR:{result.value}")
 
     # Skip scheduler setup if disabled in configuration
     if not settings.ENABLE_APSCHEDULER:
@@ -125,7 +160,7 @@ async def deploy():
     scheduler.add_job(
         execute_browser_tasks,
         trigger=CronTrigger(
-            day_of_week="thu", hour="23,0,1,2,3", minute="30", timezone="Asia/Shanghai"
+            day_of_week="thu", hour="23,0,1,2,3", minute="30", timezone="Asia/Taipei"
         ),
         id="weekly_epic_games_task",
         name="weekly_epic_games_task",
@@ -137,7 +172,7 @@ async def deploy():
     # Strategy 2: Daily at 12:00 PM (Beijing Time)
     scheduler.add_job(
         execute_browser_tasks,
-        trigger=CronTrigger(hour="12", minute="0", timezone="Asia/Shanghai"),
+        trigger=CronTrigger(hour="12", minute="0", timezone="Asia/Taipei"),
         id="daily_epic_games_task",
         name="daily_epic_games_task",
         args=[headless],
@@ -176,7 +211,7 @@ async def deploy():
         pass
     finally:
         scheduler.shutdown(wait=True)
-        logger.success("Scheduler stopped gracefully")
+        logger.success("排程器已順利停止")
 
 
 if __name__ == '__main__':
