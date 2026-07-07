@@ -341,7 +341,7 @@ class EpicAgent:
             try:
                 await self.epic_games.collect_weekly_games(self._promotions)
                 return GameCollectResult.SUCCESS
-            # except Exception as e:
+            except Exception as e:
                 logger.exception(e)
                 return GameCollectResult.UNKNOWN_ERROR
         
@@ -356,7 +356,7 @@ class EpicGames:
 
     @staticmethod
     async def _agree_license(page: Page):
-        logger.debug("Agree license")
+        logger.debug("接受協議")
         with suppress(TimeoutError):
             await page.click("//label[@for='agree']", timeout=4000)
             accept = page.locator("//button//span[text()='Accept']")
