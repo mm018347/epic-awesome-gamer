@@ -441,7 +441,7 @@ class EpicGames:
             logger.info(f"🔎 檢查結帳容器: {label}")
 
             for text_value in button_texts:
-        try:
+                try:
                     btn = container.locator("button", has_text=text_value).first
                     if await _button_is_usable(btn):
                         btn_text = (await btn.text_content(timeout=1000) or "").strip()
