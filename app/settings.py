@@ -1,158 +1,249 @@
 # -*- coding: utf-8 -*-
-import os
-import sys
+"""
+Epic Games Free Game Collection Deployment Module
+
+This module orchestrates the automated collection of free games from Epic Games Store
+using browser automation and scheduling capabilities.
+
+@Time    : 2025/7/16 21:28
+@Author  : QIN2DIM
+@GitHub  : https://github.com/QIN2DIM
+"""
+
 import asyncio
-from pathlib import Path
+import json
+import os
+import signal
+import sys
+from contextlib import suppress
+from datetime import datetime
 
-# === 引入所需库 ===
-from hcaptcha_challenger.agent import AgentConfig
-from pydantic import Field, SecretStr
-from pydantic_settings import SettingsConfigDict
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
+from browserforge.fingerprints import Screen
+from camoufox import AsyncCamoufox
 from loguru import logger
+from playwright.async_api import ViewportSize
+from pytz import timezone
 
-# --- 核心路径定义 ---
-PROJECT_ROOT = Path(__file__).parent
-VOLUMES_DIR = PROJECT_ROOT.joinpath("volumes")
-LOG_DIR = VOLUMES_DIR.joinpath("logs")
-USER_DATA_DIR = VOLUMES_DIR.joinpath("user_data")
-RUNTIME_DIR = VOLUMES_DIR.joinpath("runtime")
-SCREENSHOTS_DIR = VOLUMES_DIR.joinpath("screenshots")
-RECORD_DIR = VOLUMES_DIR.joinpath("record")
-HCAPTCHA_DIR = VOLUMES_DIR.joinpath("hcaptcha")
+from services.epic_authorization_service import EpicAuthorization, ErrorType
+from services.epic_games_service import EpicAgent, GameCollectResult
+from services.epic_games_service import _is_driver_disconnect_error
+from settings import LOG_DIR, RECORD_DIR
+from settings import settings
+from utils import init_log
 
-# === 配置类定义 ===
-class EpicSettings(AgentConfig):
-    model_config = SettingsConfigDict(env_file=".env", env_ignore_empty=True, extra="ignore")
+# Initialize logging configuration
+init_log(
+    runtime=LOG_DIR.joinpath("runtime.log"),
+    error=LOG_DIR.joinpath("error.log"),
+    # serialize=LOG_DIR.joinpath("serialize.log"),
+)
 
-    # [基础配置]
-    GEMINI_API_KEY: SecretStr | None = Field(
-        default_factory=lambda: os.getenv("GEMINI_API_KEY"),
-        description="AiHubMix 的令牌",
-    )
-    
-    GEMINI_BASE_URL: str = Field(
-        default=os.getenv("GEMINI_BASE_URL", "https://aihubmix.com"),
-        description="中转地址",
-    )
-    
-    GEMINI_MODEL: str = Field(
-        default=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
-        description="模型名稱（統一設定所有模型）",
-    )
-    
-    # 用 GEMINI_MODEL 統一覆寫 hcaptcha-challenger 的所有模型設定
-    CHALLENGE_CLASSIFIER_MODEL: str = Field(default=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"))
-    IMAGE_CLASSIFIER_MODEL: str = Field(default=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"))
-    SPATIAL_POINT_REASONER_MODEL: str = Field(default=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"))
-    SPATIAL_PATH_REASONER_MODEL: str = Field(default=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"))
+# Default timezone for scheduling operations
+TIMEZONE = timezone("Asia/Taipei")
 
-    EPIC_EMAIL: str = Field(default_factory=lambda: os.getenv("EPIC_EMAIL"))
-    EPIC_PASSWORD: SecretStr = Field(default_factory=lambda: os.getenv("EPIC_PASSWORD"))
-    DISABLE_BEZIER_TRAJECTORY: bool = Field(default=True)
 
-    cache_dir: Path = HCAPTCHA_DIR.joinpath(".cache")
-    challenge_dir: Path = HCAPTCHA_DIR.joinpath(".challenge")
-    captcha_response_dir: Path = HCAPTCHA_DIR.joinpath(".captcha")
+# @logger.catch
+async def execute_browser_tasks(headless: bool = True) -> ErrorType:
+    """
+    Execute Epic Games free game collection tasks using browser automation.
 
-    ENABLE_APSCHEDULER: bool = Field(default=True)
-    TASK_TIMEOUT_SECONDS: int = Field(default=900)
-    # 调高超时限制，防止下单重载导致 Timeout
-    EXECUTION_TIMEOUT: float = Field(default=240.0) 
-    RESPONSE_TIMEOUT: float = Field(default=60.0)
+    This function handles the complete workflow of authenticating with Epic Games
+    and collecting available free games through browser automation.
 
-    REDIS_URL: str = Field(default="redis://redis:6379/0")
-    CELERY_WORKER_CONCURRENCY: int = Field(default=1)
-    CELERY_TASK_TIME_LIMIT: int = Field(default=1200)
-    CELERY_TASK_SOFT_TIME_LIMIT: int = Field(default=900)
+    Args:
+        headless: Whether to run browser in headless mode
 
-    @property
-    def user_data_dir(self) -> Path:
-        target_ = USER_DATA_DIR.joinpath(self.EPIC_EMAIL)
-        target_.mkdir(parents=True, exist_ok=True)
-        return target_
+    Returns:
+        ErrorType: 错误类型，用于指示执行结果
+    """
+    logger.debug("Starting Epic Games collection task")
 
-settings = EpicSettings()
-settings.ignore_request_questions = ["Please drag the crossing to complete the lines"]
-
-# ========================= 处理中转解析与多图冲突 =========================
-def _apply_aihubmix_patch():
-    if not settings.GEMINI_API_KEY:
-        return
+    # ============================================================
+    # 🌐 代理配置：从环境变量读取（支持 WARP 等 HTTP 代理）
+    # 格式: HTTP_PROXY=http://host:port
+    # ============================================================
+    proxy_config = None
+    http_proxy = os.getenv("HTTP_PROXY") or os.getenv("HTTPS_PROXY")
+    if http_proxy:
+        from urllib.parse import urlparse
+        parsed = urlparse(http_proxy)
+        proxy_config = {
+            "server": f"{parsed.scheme}://{parsed.hostname}:{parsed.port}",
+        }
+        if parsed.username:
+            proxy_config["username"] = parsed.username
+        if parsed.password:
+            proxy_config["password"] = parsed.password
+        logger.info(f"🌐 使用代理: {parsed.hostname}:{parsed.port}")
 
     try:
-        from google import genai
-        from google.genai import types
-        
-        # 1. 劫持 Client 初始化 (自动修正中转路径)
-        orig_init = genai.Client.__init__
-        def new_init(self, *args, **kwargs):
-            if hasattr(settings.GEMINI_API_KEY, 'get_secret_value'):
-                api_key = settings.GEMINI_API_KEY.get_secret_value()
+        # Configure browser with anti-detection features
+        async with AsyncCamoufox(
+            persistent_context=True,
+            user_data_dir=settings.user_data_dir,
+            screen=Screen(max_width=1920, max_height=1080, min_height=1080, min_width=1920),
+            humanize=0.2,
+            headless=headless,
+            proxy=proxy_config,
+        ) as browser:
+            # Initialize or reuse existing browser page
+            page = browser.pages[0] if browser.pages else await browser.new_page()
+            logger.debug("Browser initialized successfully")
+
+            # Handle Epic Games authentication
+            logger.debug("Initiating Epic Games authentication")
+            auth_agent = EpicAuthorization(page)
+            auth_result = await auth_agent.invoke()
+            logger.debug(f"Authentication result: {auth_result.value if auth_result else 'None'}")
+
+            # ============================================================
+            # 🔥 错误类型处理
+            # 根据不同的错误类型输出特定格式的日志，便于 worker.py 解析
+            # ============================================================
+            if auth_result != ErrorType.SUCCESS:
+                # 输出特定格式的错误日志，便于 worker.py 解析
+                # 格式: ❌ ERROR_TYPE:xxx 其中 xxx 是 ErrorType 的 value
+                auth_error = auth_result or ErrorType.UNKNOWN
+                logger.error(f"❌ ERROR_TYPE:{auth_error.value}")
+                return auth_error
+
+            logger.debug("Authentication completed successfully")
+
+            # 登录 Agent 会注册 hCaptcha response 监听器。使用同一浏览器
+            # context 的干净页面继续领取，Cookie 保持共享，同时彻底终止
+            # 登录页上仍在运行的 HSW 回调，避免其阻塞商品按钮点击。
+            claim_page = await page.context.new_page()
+            await page.close()
+            page = claim_page
+
+            logger.debug("Starting free games collection process")
+            agent = EpicAgent(page)
+            game_result = await agent.collect_epic_games()
+
+            # ============================================================
+            # 🔥 游戏收集结果处理
+            # 根据不同的结果类型输出特定格式的日志
+            # ============================================================
+            if game_result == GameCollectResult.ALL_OWNED:
+                logger.success("✅ 所有周免游戏已在库中")
+            elif game_result == GameCollectResult.SUCCESS:
+                logger.success("🎉 游戏领取成功！")
             else:
-                api_key = str(settings.GEMINI_API_KEY)
-            
-            kwargs['api_key'] = api_key
-            
-            base_url = settings.GEMINI_BASE_URL.rstrip('/')
-            # 不再強制加入 /gemini 字尾，直接使用使用者設定的 URL
-            
-            kwargs['http_options'] = types.HttpOptions(base_url=base_url)
-            logger.info(f"🚀 已强行同步模型变量 | 当前生效 ID: {settings.GEMINI_MODEL} | 地址: {base_url}")
-            orig_init(self, *args, **kwargs)
-        
-        genai.Client.__init__ = new_init
+                # 失败情况：输出错误类型供 worker.py 解析
+                logger.error(f"❌ GAME_ERROR:{game_result.value}")
 
-        # 2. 劫持文件上传 (绕过 400/403 错误，并修复 TypeError)
-        try:
-            file_cache = {}
+            # Cleanup browser resources
+            logger.debug("Cleaning up browser resources")
+            with suppress(Exception):
+                for p in browser.pages:
+                    await p.close()
 
-            # 自定义 helper，避免依赖 google 内部库
-            def _local_to_list(c):
-                return c if isinstance(c, list) else [c]
+            with suppress(Exception):
+                await browser.close()
 
-            async def patched_upload(self_files, file, **kwargs):
-                if hasattr(file, 'read'): content = file.read()
-                elif isinstance(file, (str, Path)):
-                    with open(file, 'rb') as f: content = f.read()
-                else: content = bytes(file)
-                
-                if asyncio.iscoroutine(content): content = await content
-                
-                # 伪造文件上传，实际只存内存
-                file_id = f"bypass_{id(content)}"
-                file_cache[file_id] = content
-                return types.File(name=file_id, uri=file_id, mime_type="image/png")
+            logger.debug("Browser tasks execution finished successfully")
+            return ErrorType.SUCCESS
+    except Exception as exc:
+        logger.exception(exc)
+        if _is_driver_disconnect_error(exc):
+            logger.error("❌ FINAL_ERROR:network_timeout")
+            return ErrorType.NETWORK_TIMEOUT
+        return ErrorType.UNKNOWN
 
-            orig_generate = genai.models.AsyncModels.generate_content
-            async def patched_generate(self_models, model, contents, **kwargs):
-                # [修正：针对多图发送时的分辨率冲突]
-                if 'config' in kwargs and kwargs['config'] is not None:
-                    if hasattr(kwargs['config'], 'media_resolution'):
-                        kwargs['config'].media_resolution = None # 剔除写死的 HIGH 分辨率
 
-                normalized = _local_to_list(contents)
-                
-                for content in normalized:
-                    if hasattr(content, 'parts'):
-                        for i, part in enumerate(content.parts):
-                            # 如果发现是我们伪造的文件 ID，立马替换成 Base64
-                            if part.file_data and part.file_data.file_uri in file_cache:
-                                data = file_cache[part.file_data.file_uri]
-                                content.parts[i] = types.Part.from_bytes(data=data, mime_type="image/png")
-                
-                # [核心修复点] 强制使用关键字参数 model= 和 contents=
-                # 这解决了 "takes 1 positional argument but 3 were given" 的报错
-                return await orig_generate(self_models, model=model, contents=normalized, **kwargs)
+async def deploy():
+    """
+    Main deployment function that executes Epic Games collection tasks.
 
-            genai.files.AsyncFiles.upload = patched_upload
-            genai.models.AsyncModels.generate_content = patched_generate
-            logger.info("🚀 补丁成功挂载：多图写保护 + 模型 ID 动态注入已就绪")
-            
-        except Exception as ie:
-            logger.warning(f"⚠️ 文件层补丁处理异常: {ie}")
+    This function runs the collection process immediately and optionally
+    sets up a scheduled task for automatic recurring execution.
+    """
+    headless = True
 
-    except Exception as e:
-        logger.error(f"❌ 严重：补丁框架启动失败! 原因: {e}")
+    # Log current configuration for debugging
+    sj = settings.model_dump(mode="json")
+    sj["headless"] = headless
+    logger.debug(
+        f"Starting deployment with configuration: {json.dumps(sj, indent=2, ensure_ascii=False)}"
+    )
 
-# 执行补丁
-#_apply_aihubmix_patch()
+    # Execute an immediate collection task
+    result = await execute_browser_tasks(headless=headless)
+    if result is None:
+        logger.error("❌ 浏览器任务未返回明确结果，按未知错误处理")
+        result = ErrorType.UNKNOWN
+
+    # 如果任务失败，输出最终错误类型（便于 worker.py 解析）
+    if result != ErrorType.SUCCESS:
+        logger.error(f"❌ FINAL_ERROR:{result.value}")
+
+    # Skip scheduler setup if disabled in configuration
+    if not settings.ENABLE_APSCHEDULER:
+        logger.debug("Scheduler is disabled, deployment completed")
+        return
+
+    # Initialize and configure async scheduler
+    scheduler = AsyncIOScheduler()
+
+    # Strategy 1: Thursday 23:30 to Friday 03:30, every hour (Beijing Time)
+    scheduler.add_job(
+        execute_browser_tasks,
+        trigger=CronTrigger(
+            day_of_week="thu", hour="23,0,1,2,3", minute="30", timezone="Asia/Taipei"
+        ),
+        id="weekly_epic_games_task",
+        name="weekly_epic_games_task",
+        args=[headless],
+        replace_existing=False,
+        max_instances=1,
+    )
+
+    # Strategy 2: Daily at 12:00 PM (Beijing Time)
+    scheduler.add_job(
+        execute_browser_tasks,
+        trigger=CronTrigger(hour="12", minute="0", timezone="Asia/Taipei"),
+        id="daily_epic_games_task",
+        name="daily_epic_games_task",
+        args=[headless],
+        replace_existing=False,
+        max_instances=1,
+    )
+
+    # Set up graceful shutdown signal handlers
+    shutdown_event = asyncio.Event()
+
+    def signal_handler(signum, frame):
+        logger.debug(f"Received signal {signal.Signals(signum).name}, initiating graceful shutdown")
+        shutdown_event.set()
+
+    # Register signal handlers for graceful shutdown
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
+    # Start scheduler and log status information
+    scheduler.start()
+    logger.debug("Epic Games scheduler started successfully")
+    logger.debug(f"Current time: {datetime.now(TIMEZONE).strftime('%Y-%m-%d %H:%M:%S %Z')}")
+
+    # Log next execution times for all scheduled jobs
+    for j in scheduler.get_jobs():
+        if next_run := j.next_run_time:
+            logger.debug(
+                f"Next execution scheduled: {next_run.strftime('%Y-%m-%d %H:%M:%S %Z')} (job_id: {j.id})"
+            )
+
+    # Keep scheduler running until shutdown signal received
+    logger.debug("Scheduler is running, send SIGINT or SIGTERM to stop gracefully")
+    try:
+        await shutdown_event.wait()
+    except (KeyboardInterrupt, SystemExit):
+        pass
+    finally:
+        scheduler.shutdown(wait=True)
+        logger.success("Scheduler stopped gracefully")
+
+
+if __name__ == '__main__':
+    asyncio.run(deploy())
