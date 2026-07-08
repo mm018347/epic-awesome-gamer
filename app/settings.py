@@ -745,4 +745,4 @@ JSON Schema:
 _apply_openai_compatible_patch()
 
 # 導出
-__all__ = ['settings']",
+__all__ = ['settings']
