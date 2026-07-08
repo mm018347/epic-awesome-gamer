@@ -1,0 +1,193 @@
+# ============================================================
+# Epic Kiosk - 自动驾驶领取系统（本地编译版本）
+# ============================================================
+# GitHub: https://github.com/10000ge10000/epic-kiosk
+# 公益站点: https://epic.910501.xyz/
+# ============================================================
+#
+# 🚀 部署方式：
+#   1. Linux 一键部署: curl -fsSL https://raw.githubusercontent.com/10000ge10000/epic-kiosk/main/install.sh | bash
+#   2. 手动部署: 克隆项目 → 修改 API Key → docker compose up -d --build
+#
+# ⚠️ 必须修改: API_KEY
+#    Configure it in .env; NVIDIA, SiliconFlow, and custom OpenAI-compatible providers are supported.
+#
+# 📦 镜像说明：
+#   - redis:alpine - 官方镜像，直接拉取
+#   - epic-kiosk-web - 本地编译
+#   - epic-kiosk-worker - 本地编译（含 WARP 网络代理）
+# ============================================================
+
+services:
+  # ============================================================
+  # Redis: 消息队列（官方镜像）
+  # ============================================================
+  redis:
+    image: redis:alpine
+    container_name: epic-redis
+    restart: always
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "1"
+
+  # ============================================================
+  # Web: 前端服务（FastAPI）
+  # 本地编译，首次部署约需 2-3 分钟
+  # ============================================================
+  web:
+    build:
+      context: .
+    image: epic-kiosk-web:local
+    container_name: epic-web
+    ports:
+      - "18000:8000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - REDIS_HOST=redis
+      - TZ=Asia/Shanghai
+      - ENABLE_APSCHEDULER=true
+      - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN:?请在 .env 中配置 INTERNAL_API_TOKEN}
+      - TASK_LOCK_SECONDS=86400
+      - CONFIRM_TOKEN_SECONDS=86400
+      - DAILY_SCHEDULE_LOCK_SECONDS=86400
+      # 历史数据偏移量配置（用于补偿丢失的记录，其他用户无需修改）
+      - CLAIM_HISTORY_OFFSET=1132
+      - ACCOUNT_VERIFIED_OFFSET=140
+      - ACCOUNT_TOTAL_OFFSET=140
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "1"
+
+  # ============================================================
+  # WARP 代理：单容器多出口（10 个独立 WARP 实例）
+  # 端口: epic-warp:19000-19009
+  # 控制接口: http://epic-warp:18080/restart/{idx}
+  # ============================================================
+  warp:
+    image: zen-warp-multi:local
+    container_name: epic-warp
+    restart: always
+    privileged: true
+    environment:
+      - WARP_INSTANCE_COUNT=10
+      - WARP_START_PORT=19000
+      - WARP_CONTROL_PORT=18080
+    volumes:
+      - ./data/warp:/warp-data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:18080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 8m
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "1"
+
+
+  # ============================================================
+  # Worker: 后台任务执行器（浏览器自动化）
+  # 本地编译，首次部署约需 5-10 分钟
+  # 通过 WARP 代理访问 Epic Games
+  # ============================================================
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    image: epic-kiosk-worker:local
+    container_name: epic-worker
+    user: root
+    init: true
+    cpus: "2.00"
+    pids_limit: 300
+    volumes:
+      - ./data:/app/data
+      - ./data:/app/app/volumes
+      # Docker socket - 允许 worker 重启 WARP 容器
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - REDIS_HOST=redis
+      - TZ=Asia/Shanghai
+      - PYTHONUNBUFFERED=1
+      - ENABLE_APSCHEDULER=false
+      - API_PROVIDER=${API_PROVIDER:-siliconflow}
+      - API_BASE_URL=${API_BASE_URL:-https://api.siliconflow.cn/v1}
+      - OPENCODE_BASE_URL=https://opencode.ai/zen
+      - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN:?请在 .env 中配置 INTERNAL_API_TOKEN}
+      - TASK_TIMEOUT_SECONDS=600
+      - TASK_LOCK_SECONDS=86400
+      - HCAPTCHA_EXECUTION_TIMEOUT=${HCAPTCHA_EXECUTION_TIMEOUT:-240}
+      - HCAPTCHA_RESPONSE_TIMEOUT=${HCAPTCHA_RESPONSE_TIMEOUT:-120}
+      - HCAPTCHA_PAYLOAD_TIMEOUT=${HCAPTCHA_PAYLOAD_TIMEOUT:-90}
+      - HCAPTCHA_FRAME_TIMEOUT=20
+      - HCAPTCHA_SOLVE_MAX_ATTEMPTS=4
+      # WARP HTTP 代理（容器内部网络）
+      - HTTP_PROXY=http://epic-warp:19000
+      - HTTPS_PROXY=http://epic-warp:19000
+      # WARP 代理配置（用于检测、选择端口和重启单个出口）
+      - WARP_PROXY_HOST=epic-warp
+      - WARP_PROXY_START_PORT=19000
+      - WARP_PROXY_COUNT=10
+      - WARP_CONTROL_URL_TEMPLATE=http://epic-warp:18080/restart/{idx}
+      # 内部服务不走代理（修复入库 API 失败问题）
+      - NO_PROXY=web,epic-web,redis,epic-redis,localhost,127.0.0.1
+      # ============================================================
+      # API Key must be configured in .env.
+      # Supports NVIDIA, SiliconFlow, or custom OpenAI-compatible providers.
+      # Do not commit real keys in docker-compose.yml.
+      # ============================================================
+      - API_KEY=${API_KEY:?set API_KEY in .env}
+      # 环境变量（绕过父类验证器，无需修改）
+      - GEMINI_API_KEY=not_used
+      # ============================================================
+      # 模型配置（SiliconFlow 实测通过）
+      - CAPTCHA_MODEL=${CAPTCHA_MODEL:-Qwen/Qwen3-VL-32B-Instruct}
+      - CAPTCHA_MODEL_FALLBACK=${CAPTCHA_MODEL_FALLBACK:-Qwen/Qwen3-VL-30B-A3B-Instruct}
+      - CAPTCHA_RESPONSE_MAX_TOKENS=1200
+      - CAPTCHA_API_TIMEOUT=${CAPTCHA_API_TIMEOUT:-60}
+      - CAPTCHA_API_RETRIES=1
+      - CAPTCHA_FALLBACK_AFTER_CALLS=0
+      - CAPTCHA_FALLBACK_TIME_WINDOW=300
+      # 可选：外部验证码服务商 fallback（默认关闭；Key 只放 .env）
+      - CAPTCHA_PROVIDER=${CAPTCHA_PROVIDER:-none}
+      - CAPTCHA_PROVIDER_API_KEY=${CAPTCHA_PROVIDER_API_KEY:-}
+      - CAPTCHA_PROVIDER_SITE_KEY=${CAPTCHA_PROVIDER_SITE_KEY:-91e4137f-95af-4bc9-97af-cdcedce21c8c}
+      - CAPTCHA_PROVIDER_TIMEOUT=${CAPTCHA_PROVIDER_TIMEOUT:-180}
+      - CAPTCHA_PROVIDER_POLL_INTERVAL=${CAPTCHA_PROVIDER_POLL_INTERVAL:-5}
+      - PRIMARY_MODEL=deepseek-ai/DeepSeek-V4-Flash
+      - PRIMARY_MODEL_FALLBACK=deepseek-ai/DeepSeek-V4-Pro
+      # 验证码失败后的自动恢复策略
+      - COOKIE_INVALID_MAX_RETRIES=${COOKIE_INVALID_MAX_RETRIES:-1}
+      - CAPTCHA_FAILURE_MAX_RETRIES=2
+      - CAPTCHA_FAILURE_RETRY_DELAY_SECONDS=900
+      - NETWORK_FAILURE_MAX_RETRIES=2
+      - NETWORK_FAILURE_RETRY_DELAY_SECONDS=600
+      - WARP_RESTART_COOLDOWN_SECONDS=300
+      - TASK_SPACING_SECONDS=5
+    depends_on:
+      redis:
+        condition: service_healthy
+      warp:
+        condition: service_healthy
+    restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "1"

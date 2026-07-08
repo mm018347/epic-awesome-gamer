@@ -1,77 +1,62 @@
-# Git相关
-.git
+# ============================================================
+# Docker 构建忽略文件
+# ============================================================
+# 排除不需要打包进镜像的文件，减少镜像体积
+# ============================================================
+
+# Git 相关
+.git/
+.github/
 .gitignore
 
-# Python相关
+# Python 缓存和虚拟环境
 __pycache__/
 *.py[cod]
-*$py.class
+*.pyo
+*.pyd
+.Python
 .venv/
 venv/
 ENV/
-env/
-.env
-.env.*
-.envrc
-
-# IDE相关
-.idea/
-.vscode/
-.vs/
-
-# 缓存和临时文件
-.cache/
-.pytest_cache/
-.coverage
-.ruff_cache/
-.mypy_cache/
-.tox/
-.nox/
-
-# 开发工具
-.python-version
-.editorconfig
-
-# 日志文件
-*.log
-logs/
-app/logs/
-
-# 构建产物
-dist/
-build/
 *.egg-info/
-.pybuilder/
-target/
+*.egg
+.eggs/
 
-# 文档
-#README.md
-#LICENSE
-#*.md
+# 用户数据（运行时通过 volume 挂载，不应进入镜像）
+data/
 
-# 测试相关
-.hypothesis/
-htmlcov/
-cover/
-nosetests.xml
-coverage.xml
-*.cover
-*.py.cover
+# IDE 和编辑器
+.vscode/
+.idea/
+.agents/
+.codex/
+*.swp
+*.swo
+*~
 
-# 临时文件
+# 操作系统文件
 .DS_Store
 Thumbs.db
-*.tmp
-*.temp
 
-# Docker相关
-docker/
-examples/
-.dockerignore
-README.md
-app/**/*.md
-.github/
+# 环境变量文件
+.env
+.env.*
+*.local
+
+# Docker 相关（避免递归）
+docker-compose*.yml
+.docker/
+
+# 文档
+*.md
+docs/
+assets/
+
+# 安装脚本（运行时不需要）
+install.sh
+
+# 测试文件
 tests/
-.devcontainer/
-tmp/
-app/tmp/
+.pytest_cache/
+.coverage
+htmlcov/
