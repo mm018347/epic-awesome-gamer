@@ -31,6 +31,17 @@ jobs:
           printf "%s" "$GEMINI_API_KEY" | wc -c
           echo -n "sha256_12="
           printf "%s" "$GEMINI_API_KEY" | sha256sum | cut -c1-12
+          API_KEY: ${{ secrets.API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${API_KEY:-}" ]; then
+            echo "API_KEY is EMPTY"
+            exit 1
+          fi
+          echo -n "len="
+          printf "%s" "$API_KEY" | wc -c
+          echo -n "sha256_12="
+          printf "%s" "$API_KEY" | sha256sum | cut -c1-12
 
     
       - name: 取出儲存庫
