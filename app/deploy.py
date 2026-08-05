@@ -39,7 +39,7 @@ init_log(
 )
 
 # Default timezone for scheduling operations
-TIMEZONE = timezone("Asia/Shanghai")
+TIMEZONE = timezone("Asia/Taipei")
 
 
 @logger.catch
@@ -125,7 +125,7 @@ async def deploy():
     scheduler.add_job(
         execute_browser_tasks,
         trigger=CronTrigger(
-            day_of_week="thu", hour="23,0,1,2,3", minute="30", timezone="Asia/Shanghai"
+            day_of_week="thu", hour="23,0,1,2,3", minute="30", timezone="Asia/Taipei"
         ),
         id="weekly_epic_games_task",
         name="weekly_epic_games_task",
