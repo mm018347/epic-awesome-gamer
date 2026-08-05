@@ -18,7 +18,7 @@ jobs:
     
 
     steps:
-      - name: 除錯 GEMINI 密鑰指紋
+      - name: 除錯 GEMINI_API_KEY
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
@@ -31,6 +31,9 @@ jobs:
           printf "%s" "$GEMINI_API_KEY" | wc -c
           echo -n "sha256_12="
           printf "%s" "$GEMINI_API_KEY" | sha256sum | cut -c1-12
+
+      - name: 除錯 API_KEY
+        env:
           API_KEY: ${{ secrets.API_KEY }}
         run: |
           set -euo pipefail
@@ -43,7 +46,6 @@ jobs:
           echo -n "sha256_12="
           printf "%s" "$API_KEY" | sha256sum | cut -c1-12
 
-    
       - name: 取出儲存庫
         uses: actions/checkout@v6
 
@@ -55,12 +57,12 @@ jobs:
       - name: 設定 Python
         run: uv python install 3.12
 
-      - name: 安裝系統相依套件
+      - name: 安裝系統依賴套件
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb libxml2-dev libxslt-dev
 
-      - name: 安裝相依套件
+      - name: 安裝依賴套件
         run: uv sync
 
       # 增加 GITHUB_TOKEN 以解决 Camoufox 下载时的 403 频率限制
@@ -85,7 +87,7 @@ jobs:
           IMAGE_CLASSIFIER_THINKING_BUDGET: 192
           SPATIAL_POINT_THINKING_BUDGET: 256
           SPATIAL_PATH_THINKING_BUDGET: 320
-          # 在 Actions 中我们依靠 GitHub 的 cron 触发，所以关闭内部调度器
+          # 於 "操作" 內我們依靠 GitHub 的 cron 觸發，故關閉內部調度器
           ENABLE_APSCHEDULER: false
           PYTHONPATH: app
           ENABLE_AIHUBMIX_PATCH: true
