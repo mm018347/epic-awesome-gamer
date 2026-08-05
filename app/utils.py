@@ -121,7 +121,7 @@ def init_log(**sink_channel):
     logger.add(
         sink=sys.stdout,
         level="INFO",
-        filter=console_filter,
+        # filter=console_filter,
         format="<green>{time:MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>",
     )
 
